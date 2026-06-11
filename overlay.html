@@ -9,7 +9,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
     <!-- Lokale Einbindung deiner heruntergeladenen Datei -->
-    <script src="tmi.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tmi.js@1.8.5/lib/index.js"></script>
     
     <!-- Deine Konfigurationsdatei -->
     <script src="config.js"></script>
@@ -38,21 +38,29 @@
         const channelName = urlParams.get('channel') || 'Akamoru';
 
         // 2. Chat Verbindung (TMI)
-        const client = new tmi.Client({ channels: [channelName] });
-        client.connect();
+        if (typeof tmi !== 'undefined') {
+            const client = new tmi.Client({ channels: [channelName] });
+            client.connect().then(() => {
+                console.log("Verbunden mit dem Chat von: " + channelName);
+            }).catch((err) => {
+                console.error("Verbindung fehlgeschlagen: ", err);
+            });
 
-        client.on('message', async (channel, tags, message, self) => {
-            if (self) return;
-            if (message.toLowerCase().startsWith('!wish ')) {
-                const killerName = message.substring(6).trim();
-                await supabaseClient.from('killer_wünsche').insert([{ 
-                    username: tags['display-name'], 
-                    killer_name: killerName, 
-                    abgehakt: false,
-                    kanal_name: channelName
-                }]);
-            }
-        });
+            client.on('message', async (channel, tags, message, self) => {
+                if (self) return;
+                if (message.toLowerCase().startsWith('!wish ')) {
+                    const killerName = message.substring(6).trim();
+                    await supabaseClient.from('killer_wünsche').insert([{ 
+                        username: tags['display-name'], 
+                        killer_name: killerName, 
+                        abgehakt: false,
+                        kanal_name: channelName
+                    }]);
+                }
+            });
+        } else {
+            console.error("TMI-Bibliothek konnte nicht geladen werden.");
+        }
 
         // 3. Liste laden
         async function fetchKillerList() {
