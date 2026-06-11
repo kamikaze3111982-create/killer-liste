@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Akamoru Stream Hub</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="config.js"></script>
+
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 50px; background: #1a1a1a; color: white; }
+        .btn { display: block; width: 250px; margin: 10px auto; padding: 15px; background: #6441a5; color: white; text-decoration: none; border-radius: 5px; cursor: pointer; border: none; font-size: 16px; }
+        .logout-btn { background: #a54141; }
+        #overlay-url { width: 320px; padding: 10px; margin: 10px 0; border-radius: 4px; border: 1px solid #444; background: #222; color: #fff; text-align: center; }
+    </style>
+</head>
+<body>
+    <h1>Akamoru Stream Hub</h1>
+    
+    <div id="auth-container">
+        <button id="login-btn" class="btn">Mit Twitch einloggen</button>
+    </div>
+
+    <div id="nav-container" style="display: none;">
+        <h3>Willkommen zurück!</h3>
+        <p>Deine persönliche Overlay-URL für OBS:</p>
+        <input type="text" id="overlay-url" readonly>
+        <br>
+        <a href="dashboard.html" class="btn">Zum Dashboard</a>
+        <button id="logout-btn" class="btn logout-btn">Ausloggen</button>
+    </div>
+
+    <script>
+        const supabaseClient = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+
+        // Prüfen, ob der User eingeloggt ist
+        supabaseClient.auth.getSession().then(({ data }) => {
+            if (data.session) {
+                showLoggedIn(data.session.user);
+            }
+        });
+
+        function showLoggedIn(user) {
+            document.getElementById('auth-container').style.display = 'none';
+            document.getElementById('nav-container').style.display = 'block';
+            
+            // Twitch-Namen aus den Metadaten extrahieren
+            const twitchName = user.user_metadata.preferred_username || user.user_metadata.user_name;
+            
+            // Link generieren
+            const baseUrl = window.location.origin + '/overlay.html';
+            document.getElementById('overlay-url').value = `${baseUrl}?channel=${twitchName}`;
+        }
+
+        // Login-Logik
+        document.getElementById('login-btn').addEventListener('click', async () => {
+            await supabaseClient.auth.signInWithOAuth({
+                provider: 'twitch',
+                options: { redirectTo: window.location.origin + '/index.html' }
+            });
+        });
+
+        // Logout-Logik
+        document.getElementById('logout-btn').addEventListener('click', async () => {
+            await supabaseClient.auth.signOut();
+            window.location.reload();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Killer Liste - Dashboard (Steuerzentrale)</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="config.js"></script>
+
+    <script>
+        const supabaseClient = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+    </script>
+
+    <style>
+        body { margin: 0; padding: 20px; background-color: #1a1a1a; color: #e2ded0; font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 30px auto; background-color: #262626; padding: 30px; border-radius: 8px; box-shadow: 0 0 15px rgba(0,0,0,0.5); text-align: center; }
+        .hidden { display: none; }
+        button { padding: 12px 24px; font-size: 16px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .btn-twitch { background-color: #9146FF; color: white; }
+        .btn-danger { background-color: #e91e63; color: white; margin-top: 20px; }
+        .btn-check { background-color: #4CAF50; color: white; }
+        .btn-save { background-color: #008CBA; color: white; width: 100%; margin-top: 15px; }
+        .killer-item { display: flex; justify-content: space-between; align-items: center; padding: 15px; background: #333; margin: 10px 0; border-radius: 4px; text-align: left; }
+        .settings-box { background-color: #1f1f1f; padding: 20px; border-radius: 6px; margin-bottom: 30px; text-align: left; border: 1px solid #444; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: bold; color: #a8a496; }
+        .form-group input { width: 100%; padding: 10px; border-radius: 4px; border: 1px solid #555; background-color: #333; color: white; box-sizing: border-box; }
+        #save-status, #copy-status { margin-top: 10px; font-weight: bold; text-align: center; color: #4CAF50; }
+    </style>
+</head>
+<body>
+
+    <div id="login-section" class="container">
+        <h2>Killerliste Steuerzentrale</h2>
+        <p>Logge dich mit deinem Twitch-Kanal ein, um die Liste zu verwalten.</p>
+        <button class="btn-twitch" id="twitchLoginBtn">Mit Twitch einloggen</button>
+    </div>
+
+    <div id="dashboard-section" class="container hidden">
+        <h2>Hallo <span id="username-display"></span>! 🎬</h2>
+        
+        <div class="settings-box">
+            <h3>🔗 Dein persönlicher Overlay-Link</h3>
+            <div style="display: flex; gap: 10px;">
+                <input type="text" id="overlayUrl" readonly>
+                <button class="btn-save" style="width: auto; margin-top: 0;" onclick="copyOverlayLink()">Kopieren</button>
+            </div>
+            <div id="copy-status"></div>
+        </div>
+
+        <div class="settings-box">
+            <h3>⚙️ Stream-Einstellungen</h3>
+            <div class="form-group">
+                <label for="commandInput">Chat-Befehl</label>
+                <input type="text" id="commandInput" placeholder="!wish">
+            </div>
+            <div class="form-group">
+                <label for="cooldownInput">Cooldown (Minuten)</label>
+                <input type="number" id="cooldownInput" placeholder="15">
+            </div>
+            <button class="btn-save" id="saveSettingsBtn">Einstellungen speichern</button>
+            <div id="save-status"></div>
+        </div>
+
+        <div style="text-align: left;">
+            <h3>📋 Offene Wünsche für deinen Kanal:</h3>
+            <ul id="killerList" style="list-style: none; padding: 0;"></ul>
+        </div>
+
+        <button class="btn-danger" id="logoutBtn">Ausloggen</button>
+    </div>
+
+    <script>
+        let currentUser = null;
+
+        // Login & Logout
+        document.getElementById('twitchLoginBtn').addEventListener('click', async () => {
+            await supabaseClient.auth.signInWithOAuth({
+                provider: 'twitch',
+                options: { redirectTo: window.location.origin + '/dashboard.html' }
+            });
+        });
+
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            await supabaseClient.auth.signOut();
+            window.location.reload();
+        });
+
+        function copyOverlayLink() {
+            const copyText = document.getElementById("overlayUrl");
+            const status = document.getElementById("copy-status");
+            navigator.clipboard.writeText(copyText.value);
+            status.textContent = "✅ Link kopiert!";
+            setTimeout(() => { status.textContent = ""; }, 3000);
+        }
+
+        async function checkUser() {
+            const { data: { user } } = await supabaseClient.auth.getUser();
+            if (user) {
+                // Sicherere Zuweisung: Wir prüfen verschiedene Pfade, wo Twitch den Namen ablegt
+                currentUser = user.user_metadata.name || 
+                              user.user_metadata.user_name || 
+                              user.user_metadata.preferred_username || 
+                              user.identities[0].identity_data.user_name;
+                
+                // Falls immer noch undefined, loggen wir es zur Sicherheit in die Konsole
+                if (!currentUser) console.log("User-Metadaten:", user.user_metadata);
+
+                document.getElementById('username-display').textContent = currentUser || "Streamer";
+                
+                document.getElementById('login-section').classList.add('hidden');
+                document.getElementById('dashboard-section').classList.remove('hidden');
+                
+                document.getElementById('overlayUrl').value = `${window.location.origin}/overlay.html?channel=${currentUser}`;
+                
+                fetchSettings();
+                fetchList();
+            }
+        }
+
+        async function fetchSettings() {
+            const { data } = await supabaseClient.from('stream_einstellungen').select('*').eq('kanal_name', currentUser).single();
+            if (data) {
+                document.getElementById('commandInput').value = data.command_name || '';
+                document.getElementById('cooldownInput').value = data.cooldown_minuten || '';
+            }
+        }
+
+        document.getElementById('saveSettingsBtn').addEventListener('click', async () => {
+            document.getElementById('save-status').textContent = "Speichert...";
+            await supabaseClient.from('stream_einstellungen').upsert({
+                kanal_name: currentUser,
+                command_name: document.getElementById('commandInput').value,
+                cooldown_minuten: parseInt(document.getElementById('cooldownInput').value, 10)
+            });
+            document.getElementById('save-status').textContent = "✅ Erfolgreich aktualisiert!";
+            setTimeout(() => { document.getElementById('save-status').textContent = ""; }, 3000);
+        });
+
+        async function fetchList() {
+            const { data } = await supabaseClient.from('killer_wünsche').select('*')
+                .eq('abgehakt', false).eq('kanal_name', currentUser).order('erstellt_am', { ascending: true });
+
+            const list = document.getElementById('killerList');
+            list.innerHTML = (!data || data.length === 0) ? "<li>Keine Wünsche offen.</li>" : "";
+            data?.forEach((item, index) => {
+                const li = document.createElement('li');
+                li.className = 'killer-item';
+                li.innerHTML = `<div><strong>${index + 1}. ${item.killer_name}</strong><br><small>von ${item.username}</small></div>
+                                <button class="btn-check" onclick="markAsPlayed(${item.id})">Gespielt</button>`;
+                list.appendChild(li);
+            });
+        }
+
+        async function markAsPlayed(id) {
+            await supabaseClient.from('killer_wünsche').update({ abgehakt: true }).eq('id', id);
+            fetchList();
+        }
+
+        checkUser();
+    </script>
+</body>
+</html>
