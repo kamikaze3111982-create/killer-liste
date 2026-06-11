@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DBD Killerliste - Overlay</title>
+    
+    <!-- Externe Bibliothek für Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <!-- Lokale Einbindung deiner heruntergeladenen Datei -->
+    <script src="tmi.min.js"></script>
+    
+    <!-- Deine Konfigurationsdatei -->
+    <script src="config.js"></script>
+
+    <style>
+        @font-face { font-family: 'HeadlinerNo45'; src: url('headliner_no45.ttf') format('truetype'); }
+        @font-face { font-family: 'Cocogoose'; src: url('COCOGOOSELETTERPRESS.ttf') format('truetype'); }
+        body { margin: 0; padding: 20px; background-color: transparent; color: #e2ded0; font-family: 'Cocogoose', sans-serif; text-transform: uppercase; overflow: hidden; height: 100vh; }
+        .killer-list-container { position: relative; width: 340px; background: linear-gradient(135deg, rgba(12, 12, 12, 0.95) 0%, rgba(3, 3, 3, 0.98) 100%); border-left: 4px solid #8a0303; padding: 18px; box-shadow: 0 0 25px rgba(0, 0, 0, 0.95); z-index: 10; display: inline-block; }
+        h2 { margin: 0 0 20px 0; font-family: 'HeadlinerNo45', sans-serif; font-size: 52px; color: #cf1f1f; text-shadow: 3px 3px 5px rgba(0, 0, 0, 0.9); border-bottom: 2px solid rgba(138, 3, 3, 0.4); padding-bottom: 12px; line-height: 0.9; }
+        .killer-list { list-style: none; padding: 0; margin: 0; }
+        .killer-item { font-family: 'Cocogoose', sans-serif; font-size: 20px; padding: 12px 5px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); display: flex; justify-content: space-between; align-items: center; }
+        .wished-by { font-size: 14px; color: #9c947d; }
+    </style>
+</head>
+<body>
+    <div class="killer-list-container">
+        <h2>Killer<br>Wunschliste</h2>
+        <ul class="killer-list" id="killerList"></ul>
+    </div>
+
+    <script>
+        // 1. Initialisierung
+        const supabaseClient = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+        const urlParams = new URLSearchParams(window.location.search);
+        const channelName = urlParams.get('channel') || 'Akamoru';
+
+        // 2. Chat Verbindung (TMI)
+        const client = new tmi.Client({ channels: [channelName] });
+        client.connect();
+
+        client.on('message', async (channel, tags, message, self) => {
+            if (self) return;
+            if (message.toLowerCase().startsWith('!wish ')) {
+                const killerName = message.substring(6).trim();
+                await supabaseClient.from('killer_wünsche').insert([{ 
+                    username: tags['display-name'], 
+                    killer_name: killerName, 
+                    abgehakt: false,
+                    kanal_name: channelName
+                }]);
+            }
+        });
+
+        // 3. Liste laden
+        async function fetchKillerList() {
+            const { data } = await supabaseClient
+                .from('killer_wünsche')
+                .select('*')
+                .eq('abgehakt', false)
+                .eq('kanal_name', channelName)
+                .order('erstellt_am', { ascending: true });
+
+            const listElement = document.getElementById('killerList');
+            listElement.innerHTML = (!data || data.length === 0) ? '<li class="killer-item" style="color: #555;">Keine Wünsche...</li>' : '';
+            
+            data?.forEach((item, index) => {
+                const li = document.createElement('li');
+                li.className = 'killer-item';
+                li.innerHTML = `<span>${index + 1}. ${item.killer_name}</span><span class="wished-by">von ${item.username}</span>`;
+                listElement.appendChild(li);
+            });
+        }
+
+        // 4. Echtzeit-Update
+        supabaseClient.channel('killer-updates')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'killer_wünsche' }, fetchKillerList)
+            .subscribe();
+
+        fetchKillerList();
+    </script>
+</body>
+</html>
